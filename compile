@@ -1,0 +1,1 @@
+g++ -o xphot -O xphot.C -I$HEADAS/include -L$HEADAS/lib -lcfitsio -lwcs-5.19.1

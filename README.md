@@ -1,6 +1,6 @@
 # xphot
 
-A C++ tool which reads a set of X-ray images and exposure maps in narrow bands and extracts source and background spectra using aperture photometry
+A C++ tool which reads a set of X-ray images and exposure maps in narrow bands and extracts XSPEC-compatible source and background spectra using aperture photometry
 
 Usage:
     xphot imglist explist ra dec radius srcfile outspec outbkg

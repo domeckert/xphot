@@ -123,32 +123,37 @@ int readimg(int band,char *fimg,char *expnam,double ra,double dec,double rad,int
     double inra,indec;
     int stat;
     status = wcss2p(wcs_n, 1, 2, world, &inra,&indec,imgcrd, pixcrd,&stat);
-    //printf("Pixel coordinates for the source: %g , %g\n",pixcrd[0],pixcrd[1]);
-    
-    //Extract source spectrum
-    calc_xphot(imgn,expn,rad,axn,pixcrd[0],pixcrd[1],cdelt2,sb,esb,counts,area,expo);
-    printf("Number of counts and count rate for source: %g counts ; CR = %g +/- %g cts/s\n",counts,sb,esb);
-    
+    printf("Pixel coordinates for the source: %g , %g\n",pixcrd[0],pixcrd[1]);
+
     //Mask sources
     double *xpos=new double[nsrc];
     double *ypos=new double[nsrc];
     double *radexc=new double[nsrc];
+	double wsrc[2], pixsrc[2];
     for (int i=0; i<nsrc; i++) {
-        world[0]=rasrc[i];
-        world[1]=decsrc[i];
-        status = wcss2p(wcs_n, 1, 2, world, &inra,&indec,imgcrd, pixcrd,&stat);
-        xpos[i]=pixcrd[0];
-        ypos[i]=pixcrd[1];
-        radexc[i]=radsrc[i]/cdelt2/3600.; //From arcsec to pixel
-		  //printf("i, xpos, ypos, radexc: %d %g %g %g\n",i,xpos[i],ypos[i],radexc[i]);
+        wsrc[0]=rasrc[i];
+        wsrc[1]=decsrc[i];
+        status = wcss2p(wcs_n, 1, 2, wsrc, &inra,&indec,imgcrd, pixsrc,&stat);
+        xpos[i]=pixsrc[0];
+        ypos[i]=pixsrc[1];
+        radexc[i]=radsrc[i]/cdelt2; //From arcsec to pixel
+		//printf("i, xpos, ypos, radexc: %d %g %g %g\n",i,xpos[i],ypos[i],radexc[i]);
     }
     region(nsrc,xpos,ypos,radexc,expn,axn);
-    
+
+    //Extract source spectrum
+    calc_xphot(imgn,expn,rad,axn,pixcrd[0],pixcrd[1],cdelt2,sb,esb,counts,area,expo);
+    printf("Number of counts and count rate for source: %g counts ; CR = %g +/- %g cts/s\n",counts,sb,esb);
+        
     //Extract background spectrum
     calc_xphot_bkg(imgn,expn,rad,axn,pixcrd[0],pixcrd[1],cdelt2,sb_bg,esb_bg,counts_bg,area_bg,expo_bg);
     printf("Number of counts and count rate for background: %g counts ; CR = %g +/- %g cts/s\n",counts_bg,sb_bg,esb_bg);
     
     printf("Band %d successfully processed\n",band);
+
+	/*if (band==9){
+		save_img((const char*)"test_exp.fits", expn, axn, crpix1, crval1, crpix2, crval2, cdelt1, cdelt2);
+	}*/
     delete [] imgn;
     delete [] expn;
     delete [] xpos;
@@ -254,6 +259,41 @@ int get_num_sources(char *srclist){
 	 return nsrc;
 }
 
+void read_srclist_regfile(char *fnam,int nsrc,double *raexc,double *decexc,double *radecerr){
+    int nlin=line_num(fnam);
+    if (nlin==0) {
+        printf("    Unable to read file %s\n",fnam);
+    }
+    else {
+        FILE *ff=fopen(fnam,"r");
+        char c;
+        // Go to the 3rd line
+        int nn=0;
+        while (nn<3){
+            c = fgetc(ff);
+            if(c == '\n') nn++;
+        }
+        char temp[200];
+            printf("    %d regions will be ignored\n",nlin-3);
+            char type[100];
+            for (int i=0;i<nlin-3;i++){
+                fscanf(ff,"%[^\n]\n",type);
+                char *pch=strtok(type,"-(,)");
+                if (!strcmp(pch,"circle")) {
+                    pch = strtok (NULL, "(,)");
+                    raexc[i]=atof(pch);
+                    pch = strtok (NULL, "(,)");
+                    decexc[i]=atof(pch);
+                    pch = strtok (NULL, "(,)");
+                    radecerr[i]=atof(pch)/3600.;
+                    printf("ra, dec, radecerr: %g %g %g\n", raexc[i], decexc[i], radecerr[i]);
+                }
+         }
+		 fclose(ff);
+    }
+}
+
+
 int read_srclist(char *srclist,int nsrc,double *raexc,double *decexc,double *radecerr,int status){
     fitsfile *fsrc;
     char name[200];
@@ -309,9 +349,12 @@ int read_srclist(char *srclist,int nsrc,double *raexc,double *decexc,double *rad
 void select_sources(double ra,double dec,double rad,int nexc,double *raexc,double *decexc,double *radecerr,int &nsrc,double *rasrc,double *decsrc,double *radsrc){
     // Routine to select only sources close to the source (speeds up masking process)
     nsrc=0;
+	double deg2rad=M_PI/180.;
     for (int i=0; i<nexc; i++) {
-        double dist=sqrt((ra-raexc[i])*(ra-raexc[i])+(dec-decexc[i])*(dec-decexc[i]));
-        if (dist*3600.<3.*rad) {
+        double dist=sqrt((ra-raexc[i])*(ra-raexc[i])*cos(fabs(dec*deg2rad))*cos(fabs(dec*deg2rad))+(dec-decexc[i])*(dec-decexc[i]));
+		//printf("decexc, dec: %g %g\n", decexc[i], dec);
+		//printf("dist, rad: %g %g\n", dist, rad);
+        if (dist*3600.<5.*rad) {
             rasrc[nsrc]=raexc[i];
             decsrc[nsrc]=decexc[i];
             radsrc[nsrc]=radecerr[i];
@@ -370,12 +413,14 @@ int main(int argc, char **argv){
 		}
 		fclose(ff);
 		fclose(fexp);
-		int nexc=get_num_sources(srcfile);
+		//int nexc=get_num_sources(srcfile);
+	int nexc = line_num(srcfile) - 3;
         double *raexc=new double[nexc];
         double *decexc=new double[nexc];
         double *radecerr=new double[nexc];
-        status=read_srclist(srcfile,nexc,raexc,decexc,radecerr,status);
-        if (status!=0) {
+        //status=read_srclist(srcfile,nexc,raexc,decexc,radecerr,status);
+        read_srclist_regfile(srcfile,nexc,raexc,decexc,radecerr);
+        /*if (status!=0) {
             printf("Exiting with status %d\n",status);
             break;
         }
@@ -384,6 +429,7 @@ int main(int argc, char **argv){
         double *radsrc=new double[nexc];
         int nsrc;
         select_sources(ra,dec,rad,nexc,raexc,decexc,radecerr,nsrc,rasrc,decsrc,radsrc);
+		printf("Number of selected sources to be masked: %d\n", nsrc);*/
         
         //Reading images and exposure maps
         double *sb=new double[nband];
@@ -399,8 +445,8 @@ int main(int argc, char **argv){
         double *area_bg=new double[nband];
         
 		for (int i=0;i<nband;i++){
-			status=readimg(i+1,allfiles[i],allexp[i],ra,dec,rad,nsrc,rasrc,decsrc,radsrc,sb[i],esb[i],counts[i],expo[i],area[i],sb_bg[i],esb_bg[i],counts_bg[i],expo_bg[i],area_bg[i]);
-            if (status!=0) {
+			//status=readimg(i+1,allfiles[i],allexp[i],ra,dec,rad,nsrc,rasrc,decsrc,radsrc,sb[i],esb[i],counts[i],expo[i],area[i],sb_bg[i],esb_bg[i],counts_bg[i],expo_bg[i],area_bg[i]);
+ status=readimg(i+1,allfiles[i],allexp[i],ra,dec,rad,nexc,raexc,decexc,radecerr,sb[i],esb[i],counts[i],expo[i],area[i],sb_bg[i],esb_bg[i],counts_bg[i],expo_bg[i],area_bg[i]);           if (status!=0) {
                 printf("Exiting with status %d\n",status);
             }
 		}
@@ -428,8 +474,8 @@ int main(int argc, char **argv){
         delete [] raexc;
         delete [] decexc;
         delete [] radecerr;
-        delete [] rasrc;
+        /*delete [] rasrc;
         delete [] decsrc;
-        delete [] radsrc;
+        delete [] radsrc;*/
 	}while (0);
 }

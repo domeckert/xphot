@@ -286,7 +286,7 @@ void read_srclist_regfile(char *fnam,int nsrc,double *raexc,double *decexc,doubl
                     decexc[i]=atof(pch);
                     pch = strtok (NULL, "(,)");
                     radecerr[i]=atof(pch)/3600.;
-                    printf("ra, dec, radecerr: %g %g %g\n", raexc[i], decexc[i], radecerr[i]);
+                    //printf("ra, dec, radecerr: %g %g %g\n", raexc[i], decexc[i], radecerr[i]);
                 }
          }
 		 fclose(ff);
@@ -353,8 +353,8 @@ void select_sources(double ra,double dec,double rad,int nexc,double *raexc,doubl
     for (int i=0; i<nexc; i++) {
         double dist=sqrt((ra-raexc[i])*(ra-raexc[i])*cos(fabs(dec*deg2rad))*cos(fabs(dec*deg2rad))+(dec-decexc[i])*(dec-decexc[i]));
 		//printf("decexc, dec: %g %g\n", decexc[i], dec);
-		//printf("dist, rad: %g %g\n", dist, rad);
-        if (dist*3600.<5.*rad) {
+        if (dist*3600.<5.*rad && dist*3600>rad) {
+            printf("dist, rad: %g %g\n", dist, rad);
             rasrc[nsrc]=raexc[i];
             decsrc[nsrc]=decexc[i];
             radsrc[nsrc]=radecerr[i];
@@ -420,7 +420,7 @@ int main(int argc, char **argv){
         double *radecerr=new double[nexc];
         //status=read_srclist(srcfile,nexc,raexc,decexc,radecerr,status);
         read_srclist_regfile(srcfile,nexc,raexc,decexc,radecerr);
-        /*if (status!=0) {
+        if (status!=0) {
             printf("Exiting with status %d\n",status);
             break;
         }
@@ -429,7 +429,7 @@ int main(int argc, char **argv){
         double *radsrc=new double[nexc];
         int nsrc;
         select_sources(ra,dec,rad,nexc,raexc,decexc,radecerr,nsrc,rasrc,decsrc,radsrc);
-		printf("Number of selected sources to be masked: %d\n", nsrc);*/
+		printf("Number of selected sources to be masked: %d\n", nsrc);
         
         //Reading images and exposure maps
         double *sb=new double[nband];
@@ -445,10 +445,11 @@ int main(int argc, char **argv){
         double *area_bg=new double[nband];
         
 		for (int i=0;i<nband;i++){
-			//status=readimg(i+1,allfiles[i],allexp[i],ra,dec,rad,nsrc,rasrc,decsrc,radsrc,sb[i],esb[i],counts[i],expo[i],area[i],sb_bg[i],esb_bg[i],counts_bg[i],expo_bg[i],area_bg[i]);
- status=readimg(i+1,allfiles[i],allexp[i],ra,dec,rad,nexc,raexc,decexc,radecerr,sb[i],esb[i],counts[i],expo[i],area[i],sb_bg[i],esb_bg[i],counts_bg[i],expo_bg[i],area_bg[i]);           if (status!=0) {
-                printf("Exiting with status %d\n",status);
-            }
+			status=readimg(i+1,allfiles[i],allexp[i],ra,dec,rad,nsrc,rasrc,decsrc,radsrc,sb[i],esb[i],counts[i],expo[i],area[i],sb_bg[i],esb_bg[i],counts_bg[i],expo_bg[i],area_bg[i]);
+			//status=readimg(i+1,allfiles[i],allexp[i],ra,dec,rad,nexc,raexc,decexc,radecerr,sb[i],esb[i],counts[i],expo[i],area[i],sb_bg[i],esb_bg[i],counts_bg[i],expo_bg[i],area_bg[i]);           
+ 			if (status!=0) {
+                		printf("Exiting with status %d\n",status);
+            		}
 		}
         
         char dummybkg[20];
